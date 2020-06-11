@@ -1,7 +1,7 @@
 import Peer, { DataConnection } from 'peerjs';
 import { get } from 'lodash';
 
-type TPeeringServiceConfig = {
+type PeeringServiceConfig = {
   peerServer?: {
     host?: string;
     key?: string;
@@ -19,12 +19,12 @@ type TPeeringServiceConfig = {
 };
 
 export class PeeringService {
-  _config: TPeeringServiceConfig;
+  _config: PeeringServiceConfig;
   _peer: Peer;
   _id: string;
   _connections: Array<DataConnection>;
 
-  constructor(config: TPeeringServiceConfig) {
+  constructor(config: PeeringServiceConfig) {
     this._config = config;
     this._peer = new Peer(undefined, {
       'host': get(this._config, 'peerServer.host', 'peers.paperwork.cloud'),
