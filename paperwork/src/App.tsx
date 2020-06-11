@@ -29,8 +29,13 @@ import { NotesService } from './lib/NotesService';
 const notesService = new NotesService();
 const bla = async() => {
   await notesService.ready();
-  const newNote = await notesService.create('test');
-  console.log(newNote);
+  const newNoteId = await notesService.create({
+    'title': 'Test'
+  });
+  console.log(newNoteId);
+  // await notesService.update(newNoteId, {
+  //   'title': 'Test 2'
+  // });
   const index = await notesService.index();
   console.log(index);
 };

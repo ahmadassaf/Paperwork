@@ -5,7 +5,6 @@ import ExploreContainer from '../components/ExploreContainer';
 import './Page.css';
 
 import { PeeringService } from '../lib/PeeringService';
-import { StorageService } from '../lib/StorageService';
 
 const peeringService = new PeeringService({
   'peerServer': {
