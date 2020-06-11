@@ -21,18 +21,19 @@ export interface PeeringServiceConfig {
 export class PeeringService {
   _config: PeeringServiceConfig;
   _peer: Peer;
-  _id: string|null;
+  _id?: string;
   _connections: Array<DataConnection>;
 
   constructor(config: PeeringServiceConfig) {
     this._config = config;
-    this._peer = new Peer(undefined, {
+    this._id = get(this._config, 'id', undefined);
+
+    this._peer = new Peer(this._id, {
       'host': get(this._config, 'peerServer.host', 'peers.paperwork.cloud'),
       'key': get(this._config, 'peerServer.key', 'peerjs'),
       'port': get(this._config, 'peerServer.port', 9000),
       'path': get(this._config, 'peerServer.path', '/peerjs')
     });
-    this._id = get(this._config, 'id', null);
     this._connections = [];
 
     this._peer.on('open', (id) => {
