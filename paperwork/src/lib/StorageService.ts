@@ -96,7 +96,7 @@ export class StorageService {
   async create(data: Object): Promise<string> {
     const id: string = uuid();
 
-    const dataStr = JSON.stringify(data);
+    const dataStr = JSON.stringify(data, null, 2);
     const diff = createPatch(id, '', dataStr);
 
     const txId: string = await this.createTx(id, diff);
@@ -131,7 +131,7 @@ export class StorageService {
   async update(id: string, data: Object): Promise<string> {
     const idx: StorageServiceIndex = await this.show(id);
 
-    const dataStr = JSON.stringify(data);
+    const dataStr = JSON.stringify(data, null, 2);
     const diff = createPatch(id, idx.materializedView, dataStr);
 
     const txId: string = await this.updateTx(idx.latestTxId, diff);
