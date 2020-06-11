@@ -1,27 +1,27 @@
 import Peer, { DataConnection } from 'peerjs';
 import { get } from 'lodash';
 
-type PeeringServiceConfig = {
+export interface PeeringServiceConfig {
+  id?: string,
   peerServer?: {
-    host?: string;
-    key?: string;
-    port?: number;
-    path?: string;
-  };
-
+    host?: string,
+    key?: string,
+    port?: number,
+    path?: string,
+  },
   handlers?: {
-    onOpen?: Function;
-    onConnection?: Function;
-    onDisconnected?: Function;
-    onClose?: Function;
-    onError?: Function;
-  };
-};
+    onOpen?: Function,
+    onConnection?: Function,
+    onDisconnected?: Function,
+    onClose?: Function,
+    onError?: Function,
+  }
+}
 
 export class PeeringService {
   _config: PeeringServiceConfig;
   _peer: Peer;
-  _id: string;
+  _id: string|null;
   _connections: Array<DataConnection>;
 
   constructor(config: PeeringServiceConfig) {
@@ -32,12 +32,17 @@ export class PeeringService {
       'port': get(this._config, 'peerServer.port', 9000),
       'path': get(this._config, 'peerServer.path', '/peerjs')
     });
-    this._id = '';
+    this._id = get(this._config, 'id', null);
     this._connections = [];
 
     this._peer.on('open', (id) => {
       this._id = id;
       console.log(`My ID: ${this._id}`);
+
+      const fn: Function|null = get(this._config, 'handlers.onOpen', null);
+      if(fn !== null) {
+        fn(id);
+      }
     });
 
     this._peer.on('connection', (conn: DataConnection) => {
@@ -47,19 +52,40 @@ export class PeeringService {
       this._handle(conn);
 
       this._connections.push(conn);
+
+      const fn: Function|null = get(this._config, 'handlers.onConnection', null);
+      if(fn !== null) {
+        fn(conn);
+      }
     });
 
     this._peer.on('disconnected', () => {
       console.log(`Disconnetced! Reconnecting ...`);
+
+      const fn: Function|null = get(this._config, 'handlers.onDisconnected', null);
+      if(fn !== null) {
+        fn();
+      }
+
       this._peer.reconnect();
     });
 
     this._peer.on('close', () => {
       console.log(`Closed!`);
+
+      const fn: Function|null = get(this._config, 'handlers.onClose', null);
+      if(fn !== null) {
+        fn();
+      }
     });
 
     this._peer.on('error', (err) => {
       console.error(err);
+
+      const fn: Function|null = get(this._config, 'handlers.onError', null);
+      if(fn !== null) {
+        fn(err);
+      }
     });
   }
 
