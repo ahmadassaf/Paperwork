@@ -1,5 +1,16 @@
 import React from 'react';
-import { StorageService } from './StorageService';
+import { StorageService, StorageServiceIndex } from './StorageService';
+
+export interface Note {
+  id: string,
+  title: string,
+  content: string,
+  tags: Array<string>,
+  attachments: Array<string>,
+  meta: {
+    [key: string]: string|number|boolean|Object
+  }
+}
 
 export class NotesService {
   _storageService: StorageService;
@@ -8,15 +19,46 @@ export class NotesService {
     this._storageService = new StorageService('notes');
   }
 
-  ready() {
+  async ready() {
     return this._storageService.ready();
   }
 
-  index() {
-    return this._storageService.index();
+  async index(resolve?: boolean): Promise<Array<string>|Array<Note>> {
+    const idxIds: Array<string> = await this._storageService.index();
+
+    if(resolve !== true) {
+      return idxIds;
+    }
+
+    let resolverPromises: Array<Promise<Note>> = [];
+    idxIds.forEach((idxId: string) => {
+      resolverPromises.push(this.show(idxId));
+    });
+
+    return Promise.all(resolverPromises);
   }
 
-  create(data: string) {
-    return this._storageService.create(data, {});
+  async show(id: string): Promise<Note> {
+    const idx: StorageServiceIndex = await this._storageService.show(id);
+
+    if(typeof idx !== 'object'
+    || idx === null
+    || idx.deletedAt !== null) {
+      throw new Error('Note does not exist!');
+    }
+
+    return JSON.parse(idx.materializedView);
+  }
+
+  async create(data: Object): Promise<string> {
+    return this._storageService.create(data);
+  }
+
+  async update(id: string, data: Object): Promise<string> {
+    return this._storageService.update(id, data);
+  }
+
+  async destroy(id: string): Promise<string> {
+    return this._storageService.destroy(id);
   }
 }
