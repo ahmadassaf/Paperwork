@@ -172,12 +172,6 @@ export interface StorageConfig {
   dbKey?: string;
 }
 
-// /** @hidden */
-// export function provideStorage(storageConfig: StorageConfig): Storage {
-//   const config = !!storageConfig ? storageConfig : getDefaultConfig();
-//   return new Storage(config);
-// }
-
 function getNoopDriver() {
   // noop driver for ssr environment
   const noop = () => {};
