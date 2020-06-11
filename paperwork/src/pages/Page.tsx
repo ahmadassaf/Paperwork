@@ -4,9 +4,14 @@ import { useParams } from 'react-router';
 import ExploreContainer from '../components/ExploreContainer';
 import './Page.css';
 
-import { PeeringService } from '../lib/peering';
+import { PeeringService } from '../lib/PeeringService';
+import { StorageService } from '../lib/StorageService';
 
-const peeringService = new PeeringService();
+const peeringService = new PeeringService({
+  'peerServer': {
+    'host': '127.0.0.1'
+  }
+});
 
 const Page: React.FC = () => {
 
