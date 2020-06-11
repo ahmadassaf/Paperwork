@@ -1,6 +1,6 @@
 import { Storage, StorageConfig } from './Storage';
 import { uuid, isUuid } from 'uuidv4';
-import { createTwoFilesPatch } from 'diff';
+import { createPatch, applyPatch } from 'diff';
 import { get, merge } from 'lodash';
 
 enum StorageServiceTransactionTypes {
@@ -12,14 +12,9 @@ enum StorageServiceTransactionTypes {
 export interface StorageServiceTransaction {
   type: StorageServiceTransactionTypes,
   staticId: string,
-  data: string,
   diff: string,
   revisesId: string|null,
   timestamp: Date,
-}
-
-export interface StorageServiceMaterializedView {
-  [key: string]: string|number|boolean|Object
 }
 
 export interface StorageServiceIndex {
@@ -35,9 +30,8 @@ export class StorageService {
   _txStorage: Storage;
   _idxStorageConfig: StorageConfig;
   _idxStorage: Storage;
-  _materializedView: StorageServiceMaterializedView
 
-  constructor(dbName: string, materializedView: StorageServiceMaterializedView) {
+  constructor(dbName: string) {
     this._txStorageConfig = {
       name: `paperwork_tx_${dbName}`,
       storeName: `paperwork_tx_${dbName}`,
@@ -53,18 +47,10 @@ export class StorageService {
       driverOrder: ['sqlite', 'indexeddb', 'websql', 'localstorage']
     };
     this._idxStorage = new Storage(this._idxStorageConfig);
-
-    this._materializedView = materializedView;
   }
 
-  _materialize(data: Object): StorageServiceMaterializedView {
-    let materializedView: StorageServiceMaterializedView = {};
-
-    Object.keys(this._materializedView).forEach((path, key) => {
-      materializedView[key] = get(data, path);
-    });
-
-    return materializedView;
+  _materialize(view: string, diff: string): string {
+    return applyPatch(view, diff);
   }
 
   async ready(): Promise<boolean> {
@@ -102,30 +88,29 @@ export class StorageService {
   async create(data: Object): Promise<string> {
     const id: string = uuid();
 
-    const txId: string = await this.createTx(id, data);
+    const dataStr = JSON.stringify(data);
+    const diff = createPatch(id, '', dataStr);
+
+    const txId: string = await this.createTx(id, diff);
 
     const idx: StorageServiceIndex = {
       'latestTxId': txId,
       'createdAt': new Date(),
       'updatedAt': new Date(),
       'deletedAt': null,
-      'materializedView': JSON.stringify(this._materialize(data))
+      'materializedView': this._materialize('', diff)
     }
 
     await this._idxStorage.set(id, idx);
     return id;
   }
 
-  async createTx(staticId: string, data: Object): Promise<string> {
+  async createTx(staticId: string, diff: string): Promise<string> {
     const id: string = uuid();
-    const dataStr = JSON.stringify(data);
-
-    const diff = createTwoFilesPatch('', id, '', dataStr);
 
     const transaction: StorageServiceTransaction = {
       'type': StorageServiceTransactionTypes.Create,
       'staticId': staticId,
-      'data': dataStr,
       'diff': diff,
       'revisesId': null,
       'timestamp': new Date()
@@ -137,11 +122,15 @@ export class StorageService {
 
   async update(id: string, data: Object): Promise<string> {
     const idx: StorageServiceIndex = await this.show(id);
-    const txId: string = await this.updateTx(idx.latestTxId, data);
+
+    const dataStr = JSON.stringify(data);
+    const diff = createPatch(id, idx.materializedView, dataStr);
+
+    const txId: string = await this.updateTx(idx.latestTxId, diff);
 
     const updatedIdx: StorageServiceIndex = {
       'latestTxId': txId,
-      'materializedView': JSON.stringify(this._materialize(data)),
+      'materializedView': this._materialize(idx.materializedView, diff),
       'createdAt': idx.createdAt,
       'updatedAt': new Date(),
       'deletedAt': null
@@ -151,17 +140,13 @@ export class StorageService {
     return id;
   }
 
-  async updateTx(id: string, data: Object): Promise<string> {
+  async updateTx(id: string, diff: string): Promise<string> {
     const existingEntry: StorageServiceTransaction = await this.showTx(id);
     const revisionId: string = uuid();
-    const dataStr = JSON.stringify(data);
-
-    const diff = createTwoFilesPatch(id, revisionId, existingEntry.data, dataStr);
 
     const transaction: StorageServiceTransaction = {
       'type': StorageServiceTransactionTypes.Update,
       'staticId': existingEntry.staticId,
-      'data': dataStr,
       'diff': diff,
       'revisesId': id,
       'timestamp': new Date()
@@ -173,7 +158,6 @@ export class StorageService {
 
   async destroy(id: string): Promise<string> {
     const idx: StorageServiceIndex = await this.show(id);
-    const txId: string = await this.updateTx(idx.latestTxId, data);
 
     const updatedIdx: StorageServiceIndex = merge(idx, {
       'deletedAt': new Date()
