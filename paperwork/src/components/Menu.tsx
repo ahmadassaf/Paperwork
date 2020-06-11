@@ -65,7 +65,7 @@ const Menu: React.FC = () => {
       <IonContent>
         <IonList id="inbox-list">
           <IonListHeader>Paperwork</IonListHeader>
-          <IonNote>user@paperwork.cloud</IonNote>
+          <IonNote>Status: Synced</IonNote>
           {appPages.map((appPage, index) => {
             return (
               <IonMenuToggle key={index} autoHide={false}>
