@@ -74,7 +74,15 @@ export class StorageService {
       throw new Error('Not a valid UUID!');
     }
 
-    return this._idxStorage.get(id);
+    const idx: StorageServiceIndex = await this._idxStorage.get(id);
+
+    if(typeof idx !== 'object'
+    || idx === null
+    || idx.deletedAt !== null) {
+      throw new Error('Note does not exist!');
+    }
+
+    return idx;
   }
 
   async showTx(id: string): Promise<StorageServiceTransaction> {

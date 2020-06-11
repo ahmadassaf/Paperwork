@@ -40,13 +40,6 @@ export class NotesService {
 
   async show(id: string): Promise<Note> {
     const idx: StorageServiceIndex = await this._storageService.show(id);
-
-    if(typeof idx !== 'object'
-    || idx === null
-    || idx.deletedAt !== null) {
-      throw new Error('Note does not exist!');
-    }
-
     return JSON.parse(idx.materializedView);
   }
 
