@@ -1,15 +1,16 @@
-import { Storage, StorageConfig, getDefaultConfig } from './Storage';
+import { Storage, StorageConfig } from './Storage';
 import { uuid, isUuid } from 'uuidv4';
-import Diff from 'diff';
+import { createTwoFilesPatch } from 'diff';
+import { get, merge } from 'lodash';
 
-enum StorageServiceEntryTypes {
+enum StorageServiceTransactionTypes {
   Create = 'create',
   Update = 'update',
   Destroy = 'destroy'
 }
 
-export interface StorageServiceEntry {
-  type: StorageServiceEntryTypes,
+export interface StorageServiceTransaction {
+  type: StorageServiceTransactionTypes,
   staticId: string,
   data: string,
   diff: string,
@@ -17,91 +18,172 @@ export interface StorageServiceEntry {
   timestamp: Date,
 }
 
-export class StorageService {
-  _storageConfig: StorageConfig;
-  _storage: Storage;
+export interface StorageServiceMaterializedView {
+  [key: string]: string|number|boolean|Object
+}
 
-  constructor(dbName: string) {
-    this._storageConfig = {
-      name: `paperwork_${dbName}`,
-      storeName: `paperwork_${dbName}`,
+export interface StorageServiceIndex {
+  latestTxId: string,
+  materializedView: string
+  createdAt: Date,
+  updatedAt: Date,
+  deletedAt: Date|null
+}
+
+export class StorageService {
+  _txStorageConfig: StorageConfig;
+  _txStorage: Storage;
+  _idxStorageConfig: StorageConfig;
+  _idxStorage: Storage;
+  _materializedView: StorageServiceMaterializedView
+
+  constructor(dbName: string, materializedView: StorageServiceMaterializedView) {
+    this._txStorageConfig = {
+      name: `paperwork_tx_${dbName}`,
+      storeName: `paperwork_tx_${dbName}`,
       dbKey: 'paperwork',
       driverOrder: ['sqlite', 'indexeddb', 'websql', 'localstorage']
     };
-    this._storage = new Storage(this._storageConfig);
+    this._txStorage = new Storage(this._txStorageConfig);
+
+    this._idxStorageConfig = {
+      name: `paperwork_idx_${dbName}`,
+      storeName: `paperwork_idx_${dbName}`,
+      dbKey: 'paperwork',
+      driverOrder: ['sqlite', 'indexeddb', 'websql', 'localstorage']
+    };
+    this._idxStorage = new Storage(this._idxStorageConfig);
+
+    this._materializedView = materializedView;
+  }
+
+  _materialize(data: Object): StorageServiceMaterializedView {
+    let materializedView: StorageServiceMaterializedView = {};
+
+    Object.keys(this._materializedView).forEach((path, key) => {
+      materializedView[key] = get(data, path);
+    });
+
+    return materializedView;
   }
 
   async ready(): Promise<boolean> {
-    const localForage = await this._storage.ready();
+    const localForageTx = await this._txStorage.ready();
+    console.log(localForageTx);
+    const localForageIdx = await this._idxStorage.ready();
+    console.log(localForageIdx);
     return true;
   }
 
-  async indexEntryById(): Promise<Array<string>> {
-    return this._storage.keys();
+  async index(): Promise<Array<string>> {
+    return this._idxStorage.keys();
   }
 
-  async showEntryById(id: string): Promise<StorageServiceEntry> {
+  async indexTx(): Promise<Array<string>> {
+    return this._txStorage.keys();
+  }
+
+  async show(id: string): Promise<StorageServiceIndex> {
     if(isUuid(id) === false) {
       throw new Error('Not a valid UUID!');
     }
 
-    return this._storage.get(id);
+    return this._idxStorage.get(id);
   }
 
-  async createEntryById(data: string): Promise<string> {
+  async showTx(id: string): Promise<StorageServiceTransaction> {
+    if(isUuid(id) === false) {
+      throw new Error('Not a valid UUID!');
+    }
+
+    return this._txStorage.get(id);
+  }
+
+  async create(data: Object): Promise<string> {
     const id: string = uuid();
-    const staticId: string = uuid();
 
-    const diff = Diff.createTwoFilesPatch('', id, '', data);
+    const txId: string = await this.createTx(id, data);
 
-    const entry: StorageServiceEntry = {
-      'type': StorageServiceEntryTypes.Create,
+    const idx: StorageServiceIndex = {
+      'latestTxId': txId,
+      'createdAt': new Date(),
+      'updatedAt': new Date(),
+      'deletedAt': null,
+      'materializedView': JSON.stringify(this._materialize(data))
+    }
+
+    await this._idxStorage.set(id, idx);
+    return id;
+  }
+
+  async createTx(staticId: string, data: Object): Promise<string> {
+    const id: string = uuid();
+    const dataStr = JSON.stringify(data);
+
+    const diff = createTwoFilesPatch('', id, '', dataStr);
+
+    const transaction: StorageServiceTransaction = {
+      'type': StorageServiceTransactionTypes.Create,
       'staticId': staticId,
-      'data': data,
+      'data': dataStr,
       'diff': diff,
       'revisesId': null,
       'timestamp': new Date()
     };
 
-    await this._storage.set(id, entry);
+    await this._txStorage.set(id, transaction);
     return id;
   }
 
-  async updateEntryById(id: string, data: string): Promise<string> {
-    const existingEntry: StorageServiceEntry = await this.showEntryById(id);
+  async update(id: string, data: Object): Promise<string> {
+    const idx: StorageServiceIndex = await this.show(id);
+    const txId: string = await this.updateTx(idx.latestTxId, data);
+
+    const updatedIdx: StorageServiceIndex = {
+      'latestTxId': txId,
+      'materializedView': JSON.stringify(this._materialize(data)),
+      'createdAt': idx.createdAt,
+      'updatedAt': new Date(),
+      'deletedAt': null
+    }
+
+    await this._idxStorage.set(id, updatedIdx);
+    return id;
+  }
+
+  async updateTx(id: string, data: Object): Promise<string> {
+    const existingEntry: StorageServiceTransaction = await this.showTx(id);
     const revisionId: string = uuid();
+    const dataStr = JSON.stringify(data);
 
-    const diff = Diff.createTwoFilesPatch(id, revisionId, existingEntry.data, data);
+    const diff = createTwoFilesPatch(id, revisionId, existingEntry.data, dataStr);
 
-    const entry: StorageServiceEntry = {
-      'type': StorageServiceEntryTypes.Update,
+    const transaction: StorageServiceTransaction = {
+      'type': StorageServiceTransactionTypes.Update,
       'staticId': existingEntry.staticId,
-      'data': data,
+      'data': dataStr,
       'diff': diff,
       'revisesId': id,
       'timestamp': new Date()
     };
 
-    await this._storage.set(revisionId, entry);
+    await this._txStorage.set(revisionId, transaction);
     return revisionId;
   }
 
-  async destroyEntryById(id: string): Promise<string> {
-    const existingEntry: StorageServiceEntry = await this.showEntryById(id);
-    const revisionId: string = uuid();
+  async destroy(id: string): Promise<string> {
+    const idx: StorageServiceIndex = await this.show(id);
+    const txId: string = await this.updateTx(idx.latestTxId, data);
 
-    const diff = Diff.createTwoFilesPatch(id, revisionId, existingEntry.data, '');
+    const updatedIdx: StorageServiceIndex = merge(idx, {
+      'deletedAt': new Date()
+    });
 
-    const entry: StorageServiceEntry = {
-      'type': StorageServiceEntryTypes.Destroy,
-      'staticId': existingEntry.staticId,
-      'data': '',
-      'diff': diff,
-      'revisesId': id,
-      'timestamp': new Date()
-    };
+    await this._idxStorage.set(id, updatedIdx);
+    return id;
+  }
 
-    await this._storage.set(revisionId, entry);
-    return revisionId;
+  async destroyTx(id: string): Promise<string> {
+    return id;
   }
 }
