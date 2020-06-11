@@ -29,11 +29,11 @@ export class Storage {
    */
   constructor(config: StorageConfig) {
     this._dbPromise = new Promise((resolve, reject) => {
-      if (typeof process !== 'undefined') {
-        const noopDriver = getNoopDriver();
-        resolve(noopDriver);
-        return;
-      }
+      // if (typeof process !== 'undefined') {
+      //   const noopDriver = getNoopDriver();
+      //   resolve(noopDriver);
+      //   return;
+      // }
 
       let db: LocalForage;
 
