@@ -1,11 +1,12 @@
 import Peer, { DataConnection } from 'peerjs';
+import { get } from 'lodash';
 
 type TPeeringServiceConfig = {
   peerServer?: {
-    host: string;
-    key: string;
-    port: number;
-    path: string;
+    host?: string;
+    key?: string;
+    port?: number;
+    path?: string;
   };
 
   handlers?: {
@@ -24,11 +25,12 @@ export class PeeringService {
   _connections: Array<DataConnection>;
 
   constructor(config: TPeeringServiceConfig) {
+    this._config = config;
     this._peer = new Peer(undefined, {
-      'host': '192.168.8.112',
-      'key': 'peerjs',
-      'port': 9000,
-      'path': '/peerjs'
+      'host': get(this._config, 'peerServer.host', 'peers.paperwork.cloud'),
+      'key': get(this._config, 'peerServer.key', 'peerjs'),
+      'port': get(this._config, 'peerServer.port', 9000),
+      'path': get(this._config, 'peerServer.path', '/peerjs')
     });
     this._id = '';
     this._connections = [];
