@@ -2,8 +2,8 @@ import { Storage, StorageConfig } from '../Storage';
 import { PeerServer } from './PeeringService';
 
 export class SettingsService {
-  _storageConfig: StorageConfig;
-  _storage: Storage;
+  private _storageConfig: StorageConfig;
+  private _storage: Storage;
 
   constructor() {
     this._storageConfig = {
@@ -15,7 +15,7 @@ export class SettingsService {
     this._storage = new Storage(this._storageConfig);
   }
 
-  async _getSetting(settingKey: string, parse?: boolean): Promise<any> {
+  private async _getSetting(settingKey: string, parse?: boolean): Promise<any> {
     const settingValue: string = await this._storage.get(settingKey);
 
     if(typeof settingValue !== 'string'
@@ -31,7 +31,7 @@ export class SettingsService {
     return settingValue;
   }
 
-  async _setSetting(settingKey: string, settingValue: any): Promise<string> {
+  private async _setSetting(settingKey: string, settingValue: any): Promise<string> {
     let validatedSettingValue: any = settingValue;
 
     if(typeof settingValue === 'undefined'
@@ -47,24 +47,24 @@ export class SettingsService {
     return settingKey;
   }
 
-  async ready(): Promise<boolean> {
+  public async ready(): Promise<boolean> {
     const localForage = await this._storage.ready();
     return true;
   }
 
-  async getPeerId(): Promise<string|null> {
+  public async getPeerId(): Promise<string|null> {
     return this._getSetting('peerId', false);
   }
 
-  async setPeerId(peerId: string): Promise<string> {
+  public async setPeerId(peerId: string): Promise<string> {
     return this._setSetting('peerId', peerId);
   }
 
-  async getPeerServer(): Promise<PeerServer|null> {
+  public async getPeerServer(): Promise<PeerServer|null> {
     return this._getSetting('peerServer', true);
   }
 
-  async setPeerServer(peerServer: PeerServer): Promise<string> {
+  public async setPeerServer(peerServer: PeerServer): Promise<string> {
     return this._setSetting('peerServer', peerServer);
   }
 }
