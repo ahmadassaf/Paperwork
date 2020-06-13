@@ -44,6 +44,7 @@ export interface PeerConnections {
 export enum PeerDataCommands {
   Status = 0,
   Auth,
+  AuthOk,
   Sync
 }
 
@@ -168,6 +169,9 @@ export class PeeringService {
         case PeerDataCommands.Auth:
           this._processAuth(peerConnection, peerId, data);
           break;
+        case PeerDataCommands.AuthOk:
+          this._processAuth(peerConnection, peerId, data);
+          break;
         default:
           this.send(peerId, this.craftUnauthorized());
           break;
@@ -210,6 +214,20 @@ export class PeeringService {
     return true;
   }
 
+  private _processAuthOk(peerConnection: PeerConnection, peerId: string, data: PeerData): boolean {
+    const authorizedPeer: AuthorizedPeer|null = this.getAuthorizedPeerById(peerId);
+
+    if(authorizedPeer === null) {
+      console.warn(`Received AuthOk response from peer ${peerId} which is not (anymore?) in the authorized peers list. Disconnecting ...`);
+      this.send(peerId, this.craftForbidden());
+      this.disconnect(peerId);
+      return false;
+    }
+
+    peerConnection.authed = true;
+    return true;
+  }
+
   private _handleConnection(conn: DataConnection, connectFulfillment?: Function, connectRejection?: Function): boolean {
     // 'open' is only for outgoing connections that were initialized through
     // connect()
@@ -218,6 +236,16 @@ export class PeeringService {
       console.log(`Connected: ${peerId}`);
 
       const connectedPeerId: string = this._addConnection(conn);
+      const authorizedPeer: AuthorizedPeer|null = this.getAuthorizedPeerById(connectedPeerId);
+
+      if(authorizedPeer === null) {
+        console.warn(`Connected to peer ${peerId} which is not (anymore?) in the authorized peers list. Disconnecting ...`);
+        this.send(peerId, this.craftForbidden());
+        this.disconnect(peerId);
+        return false;
+      }
+
+      this.send(connectedPeerId, this.craftAuth(authorizedPeer.localKey, authorizedPeer.remoteKey));
       if(typeof connectFulfillment === 'function') {
         return connectFulfillment(connectedPeerId);
       }
@@ -390,6 +418,11 @@ export class PeeringService {
         return peerId;
       }
 
+      const authorizedPeer: AuthorizedPeer|null = this.getAuthorizedPeerById(peerId);
+      if(authorizedPeer === null) {
+        throw new Error(`Cannot connecto to peer ${peerId} as it is not within the authorized peers list!`);
+      }
+
       const conn = this._peer.connect(peerId, { 'reliable': true });
       this._handleConnection(conn, fulfill, reject);
     });
@@ -432,9 +465,20 @@ export class PeeringService {
     };
   }
 
-  public craftAuthOk(): PeerData {
+  public craftAuth(localKey: string, remoteKey: string): PeerData {
     return merge(this.craftSkeleton(), {
       'command': PeerDataCommands.Auth,
+      'code': OK,
+      'payload': {
+        'myKey': localKey,
+        'yourKey': remoteKey
+      }
+    });
+  }
+
+  public craftAuthOk(): PeerData {
+    return merge(this.craftSkeleton(), {
+      'command': PeerDataCommands.AuthOk,
       'code': OK
     });
   }
