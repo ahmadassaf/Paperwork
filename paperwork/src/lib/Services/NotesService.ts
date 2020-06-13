@@ -13,17 +13,17 @@ export interface Note {
 }
 
 export class NotesService {
-  _storageService: StorageService;
+  private _storageService: StorageService;
 
   constructor() {
     this._storageService = new StorageService('notes');
   }
 
-  async ready() {
+  public async ready() {
     return this._storageService.ready();
   }
 
-  async index(resolve?: boolean): Promise<Array<string>|Array<Note>> {
+  public async index(resolve?: boolean): Promise<Array<string>|Array<Note>> {
     const idxIds: Array<string> = await this._storageService.index();
 
     if(resolve !== true) {
@@ -38,20 +38,20 @@ export class NotesService {
     return Promise.all(resolverPromises);
   }
 
-  async show(id: string): Promise<Note> {
+  public async show(id: string): Promise<Note> {
     const idx: StorageServiceIndex = await this._storageService.show(id);
     return JSON.parse(idx.materializedView);
   }
 
-  async create(data: Object): Promise<string> {
+  public async create(data: Object): Promise<string> {
     return this._storageService.create(data);
   }
 
-  async update(id: string, data: Object): Promise<string> {
+  public async update(id: string, data: Object): Promise<string> {
     return this._storageService.update(id, data);
   }
 
-  async destroy(id: string): Promise<string> {
+  public async destroy(id: string): Promise<string> {
     return this._storageService.destroy(id);
   }
 }
