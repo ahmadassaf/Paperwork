@@ -20,23 +20,44 @@ export interface PeeringServiceConfig {
   }
 }
 
+export interface AuthorizedPeer {
+  localKey: string;
+  remoteKey: string;
+  timestamp: Date;
+}
+
+export interface AuthorizedPeers {
+  [peerId: string]: AuthorizedPeer;
+}
+
+export interface PeerConnection {
+  connection: DataConnection;
+}
+
+export interface PeerConnections {
+  [peerId: string]: PeerConnection;
+}
+
 export class PeeringService {
   private _config: PeeringServiceConfig;
   private _peer: Peer;
   private _id?: string;
-  private _connections: Array<DataConnection>;
+  private _authorizedPeers: AuthorizedPeers;
+  private _connections: PeerConnections;
 
   constructor(config: PeeringServiceConfig) {
     this._config = config;
     this._id = get(this._config, 'id', undefined);
 
     this._peer = new Peer(this._id, {
-      'host': get(this._config, 'peerServer.host', 'peers.paperwork.cloud'),
+      'host': get(this._config, 'peerServer.host', '127.0.0.1'),
       'key': get(this._config, 'peerServer.key', 'peerjs'),
       'port': get(this._config, 'peerServer.port', 9000),
       'path': get(this._config, 'peerServer.path', '/peerjs')
     });
-    this._connections = [];
+
+    this._authorizedPeers = {};
+    this._connections = {};
 
     this._peer.on('open', (id) => {
       this._id = id;
@@ -54,7 +75,7 @@ export class PeeringService {
 
       this._handle(conn);
 
-      this._connections.push(conn);
+      this._addConnection(conn);
 
       const fn: Function|null = get(this._config, 'handlers.onConnection', null);
       if(fn !== null) {
@@ -101,19 +122,48 @@ export class PeeringService {
     conn.on('close', () => {
       console.log(`Closed connection!`);
 
-      const connIdx: number = this._connections.findIndex(connection => connection === conn);
-
-      if(connIdx > 0) {
-        this._connections.splice(connIdx, 1);
-      }
+      delete this._connections[conn.peer];
     });
 
     return true;
   }
 
-  public async connect(id: string): Promise<number> {
+  private _hasConnection(peerId: string): boolean {
+    if(typeof this._connections[peerId] !== 'undefined'
+    && this._connections[peerId] !== null
+    && typeof this._connections[peerId].connection !== 'undefined'
+    && this._connections[peerId].connection !== null) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private _addConnection(conn: DataConnection): string {
+    this._connections[conn.peer] = {
+      'connection': conn
+    };
+
+    return conn.peer;
+  }
+
+  public async connectAuthorizedPeers(): Promise<Array<string>> {
+    let connectPromises: Array<Promise<string>> = [];
+
+    Object.keys(this._authorizedPeers).forEach((authorizedPeerId: string) => {
+      connectPromises.push(this.connect(authorizedPeerId));
+    });
+
+    return Promise.all(connectPromises);
+  }
+
+  public async connect(peerId: string): Promise<string> {
     return new Promise((fulfill, reject) => {
-      const conn = this._peer.connect(id, { 'reliable': true });
+      if(this._hasConnection(peerId) === true) {
+        return peerId;
+      }
+
+      const conn = this._peer.connect(peerId, { 'reliable': true });
 
       conn.on('error', (err) => {
         console.error(err);
@@ -125,13 +175,36 @@ export class PeeringService {
       conn.on('open', () => {
         console.log(`Connected:`);
         console.log(conn.peer);
-        return fulfill((this._connections.push(conn) - 1));
+        return fulfill(this._addConnection(conn));
       });
     });
   }
 
-  public async send(connIdx: number, data: string): Promise<any> {
-    return this._connections[connIdx].send(data);
+  public async disconnect(peerId: string): Promise<string> {
+    if(this._hasConnection(peerId) === false) {
+      return '';
+    }
+
+    this._connections[peerId].connection.close();
+
+    return peerId;
   }
 
+  public async send(peerId: string, data: any): Promise<any> {
+    if(this._hasConnection(peerId) === false) {
+      throw new Error(`Peer ${peerId} not connected, cannot send data!`);
+    }
+
+    return this._connections[peerId].connection.send(data);
+  }
+
+  public async sendAll(data: any): Promise<any> {
+    let sendPromises: Array<Promise<any>> = [];
+
+    Object.keys(this._connections).forEach((connectedPeerId: string) => {
+      sendPromises.push(this.send(connectedPeerId, data));
+    })
+
+    return Promise.all(sendPromises);
+  }
 }
