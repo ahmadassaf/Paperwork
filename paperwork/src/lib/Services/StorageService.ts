@@ -1,4 +1,4 @@
-import { Storage, StorageConfig } from './Storage';
+import { Storage, StorageConfig } from '../Storage';
 import { uuid, isUuid } from 'uuidv4';
 import { createPatch, applyPatch } from 'diff';
 import { get, merge } from 'lodash';

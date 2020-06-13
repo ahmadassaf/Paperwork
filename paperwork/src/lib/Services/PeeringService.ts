@@ -1,14 +1,16 @@
 import Peer, { DataConnection } from 'peerjs';
 import { get } from 'lodash';
 
+export interface PeerServer {
+  host?: string,
+  key?: string,
+  port?: number,
+  path?: string,
+}
+
 export interface PeeringServiceConfig {
   id?: string,
-  peerServer?: {
-    host?: string,
-    key?: string,
-    port?: number,
-    path?: string,
-  },
+  peerServer?: PeerServer,
   handlers?: {
     onOpen?: Function,
     onConnection?: Function,
