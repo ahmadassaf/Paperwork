@@ -1,5 +1,5 @@
 import { Storage, StorageConfig } from '../Storage';
-import { PeerServer } from './PeeringService';
+import { PeerServer, AuthorizedPeers, AuthorizedPeer } from './PeeringService';
 
 export class SettingsService {
   private _storageConfig: StorageConfig;
@@ -66,5 +66,13 @@ export class SettingsService {
 
   public async setPeerServer(peerServer: PeerServer): Promise<string> {
     return this._setSetting('peerServer', peerServer);
+  }
+
+  public async getAuthorizedPeers(): Promise<AuthorizedPeers> {
+    return this._getSetting('authorizedPeers', true);
+  }
+
+  public async setAuthorizedPeers(authorizedPeers: AuthorizedPeers): Promise<string> {
+    return this._setSetting('authorizedPeers', authorizedPeers);
   }
 }
