@@ -3,20 +3,25 @@ import { PeeringService, PeeringServiceConfig, PeerServer } from './Services/Pee
 import { NotesService } from './Services/NotesService';
 
 class Supervisor {
-  private _settings: SettingsService|null;
+  private _settings: SettingsService;
+
   private _peerId: string|null;
   private _peerServer: PeerServer|null;
   private _peeringConfig: PeeringServiceConfig;
   private _peering: PeeringService|null;
 
+  private _notes: NotesService;
+
   constructor() {
-    this._settings = null;
+    this._settings = new SettingsService();
 
     this._peerId = null;
     this._peerServer = null;
 
     this._peeringConfig = {};
     this._peering = null;
+
+    this._notes = new NotesService();
   }
 
   private async _peeringHandleOnOpen(id: string): Promise<boolean> {
@@ -28,8 +33,7 @@ class Supervisor {
     return true;
   }
 
-  public async launch() {
-    this._settings = new SettingsService();
+  public async launch(): Promise<boolean> {
     await this._settings.ready();
 
     this._peerId = await this._settings.getPeerId();
@@ -50,5 +54,12 @@ class Supervisor {
     }
 
     this._peering = new PeeringService(this._peeringConfig);
+
+    await this._notes.ready();
+
+    return true;
   }
 }
+
+const supervisor = new Supervisor();
+export default supervisor;
