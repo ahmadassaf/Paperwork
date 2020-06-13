@@ -1,5 +1,5 @@
 import Peer, { DataConnection } from 'peerjs';
-import { get } from 'lodash';
+import { get, difference } from 'lodash';
 
 export interface PeerServer {
   host?: string,
@@ -32,6 +32,7 @@ export interface AuthorizedPeers {
 
 export interface PeerConnection {
   connection: DataConnection;
+  authenticated: boolean;
 }
 
 export interface PeerConnections {
@@ -73,9 +74,8 @@ export class PeeringService {
       console.log(`New connection:`);
       console.log(conn);
 
-      this._handle(conn);
-
       this._addConnection(conn);
+      this._handleConnection(conn);
 
       const fn: Function|null = get(this._config, 'handlers.onConnection', null);
       if(fn !== null) {
@@ -113,22 +113,38 @@ export class PeeringService {
     });
   }
 
-  private _handle(conn: DataConnection): boolean {
-    conn.on('data', (data: string) => {
+  private _handleConnection(conn: DataConnection, connectFulfillment?: Function, connectRejection?: Function): boolean {
+    conn.on('open', () => {
+      console.log(`Connected:`);
+      console.log(conn.peer);
+      const connectedPeerId: string = this._addConnection(conn);
+      if(typeof connectFulfillment === 'function') {
+        return connectFulfillment(connectedPeerId);
+      }
+    });
+
+    conn.on('data', (data: any) => {
       console.log(`Data:`);
       console.log(data);
     });
 
     conn.on('close', () => {
       console.log(`Closed connection!`);
+      this._removeConnection(conn);
+    });
 
-      delete this._connections[conn.peer];
+    conn.on('error', (err) => {
+      console.error(err);
+      this._removeConnection(conn);
+      if(typeof connectRejection === 'function') {
+        return connectRejection(err);
+      }
     });
 
     return true;
   }
 
-  private _hasConnection(peerId: string): boolean {
+  private _hasConnectionById(peerId: string): boolean {
     if(typeof this._connections[peerId] !== 'undefined'
     && this._connections[peerId] !== null
     && typeof this._connections[peerId].connection !== 'undefined'
@@ -139,12 +155,97 @@ export class PeeringService {
     return false;
   }
 
+  private _hasConnection(conn: DataConnection): boolean {
+    const peerId: string = conn.peer;
+    return this._hasConnectionById(peerId);
+  }
+
+  private _getConnectionById(peerId: string): DataConnection|null {
+    if(this._hasConnectionById(peerId) === false) {
+      return null;
+    }
+
+    return this._connections[peerId].connection;
+  }
+
   private _addConnection(conn: DataConnection): string {
-    this._connections[conn.peer] = {
-      'connection': conn
+    const peerId: string = conn.peer;
+
+    this._connections[peerId] = {
+      'connection': conn,
+      'authenticated': false
     };
 
-    return conn.peer;
+    return peerId;
+  }
+
+  private _removeConnectionById(peerId: string): string {
+    if(this._hasConnectionById(peerId) === false) {
+      return '';
+    }
+
+    this._connections[peerId].connection.close();
+    delete this._connections[peerId];
+
+    return peerId;
+  }
+
+  private _removeConnection(conn: DataConnection): string {
+    if(this._hasConnection(conn) === false) {
+      return '';
+    }
+
+    const peerId: string = conn.peer;
+
+    if(typeof this._connections[peerId].connection !== 'undefined'
+    && this._connections[peerId].connection !== null
+    && typeof this._connections[peerId].connection.close === 'function') {
+      this._connections[peerId].connection.close();
+    }
+
+    delete this._connections[peerId];
+    return peerId;
+  }
+
+  public setAuthorizedPeers(authorizedPeers: AuthorizedPeers): boolean {
+    this._authorizedPeers = authorizedPeers;
+    return true;
+  }
+
+  public getAuthorizedPeers(): AuthorizedPeers {
+    return this._authorizedPeers;
+  }
+
+  public async syncAuthorizedPeersAndConnections(removeConnections: boolean, makeConnections: boolean): Promise<Array<Array<string>>> {
+    let removeConnectionsPromises: Array<Promise<string>> = [];
+    let makeConnectionsPromises: Array<Promise<string>> = [];
+
+    if(removeConnections === true
+    || makeConnections === true) {
+      const connectedPeerIds: Array<string> = Object.keys(this._connections);
+      const authorizedPeerIds: Array<string> = Object.keys(this._authorizedPeers);
+
+      if(removeConnections === true) {
+        const connectionsToRemove: Array<string> = difference(connectedPeerIds, authorizedPeerIds);
+        connectionsToRemove.forEach((peerId: string) => {
+          removeConnectionsPromises.push(this.disconnect(peerId));
+        });
+      }
+
+      if(makeConnections === true) {
+        const connectionsToMake: Array<string> = difference(authorizedPeerIds, connectedPeerIds);
+        connectionsToMake.forEach((peerId: string) => {
+          makeConnectionsPromises.push(this.connect(peerId));
+        });
+      }
+
+      return [
+        await Promise.all(removeConnectionsPromises),
+        await Promise.all(makeConnectionsPromises)
+      ];
+    }
+
+    return [];
   }
 
   public async connectAuthorizedPeers(): Promise<Array<string>> {
@@ -159,39 +260,27 @@ export class PeeringService {
 
   public async connect(peerId: string): Promise<string> {
     return new Promise((fulfill, reject) => {
-      if(this._hasConnection(peerId) === true) {
+      if(this._hasConnectionById(peerId) === true) {
         return peerId;
       }
 
       const conn = this._peer.connect(peerId, { 'reliable': true });
-
-      conn.on('error', (err) => {
-        console.error(err);
-        return reject(err);
-      });
-
-      this._handle(conn);
-
-      conn.on('open', () => {
-        console.log(`Connected:`);
-        console.log(conn.peer);
-        return fulfill(this._addConnection(conn));
-      });
+      this._handleConnection(conn, fulfill, reject);
     });
   }
 
   public async disconnect(peerId: string): Promise<string> {
-    if(this._hasConnection(peerId) === false) {
+    if(this._hasConnectionById(peerId) === false) {
       return '';
     }
 
-    this._connections[peerId].connection.close();
+    this._removeConnectionById(peerId);
 
     return peerId;
   }
 
   public async send(peerId: string, data: any): Promise<any> {
-    if(this._hasConnection(peerId) === false) {
+    if(this._hasConnectionById(peerId) === false) {
       throw new Error(`Peer ${peerId} not connected, cannot send data!`);
     }
 
