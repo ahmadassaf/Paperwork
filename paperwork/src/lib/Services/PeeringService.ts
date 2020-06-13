@@ -1,5 +1,5 @@
 import Peer, { DataConnection } from 'peerjs';
-import { get, difference, merge, delay } from 'lodash';
+import { get, difference, merge, delay, cloneDeep } from 'lodash';
 import { OK, BAD_REQUEST, UNAUTHORIZED, FORBIDDEN } from 'http-status-codes';
 import { uuid } from 'uuidv4';
 
@@ -157,7 +157,7 @@ export class PeeringService {
     });
   }
 
-  private _processData(peerId: string, data: PeerData): boolean {
+  private async _processData(peerId: string, data: PeerData): Promise<boolean> {
     const peerConnection: PeerConnection|null = this._getPeerConnectionById(peerId);
 
     if(peerConnection === null) {
@@ -168,14 +168,13 @@ export class PeeringService {
     if(peerConnection.authed === false) {
       switch(data.command) {
         case PeerDataCommands.Auth:
-          this._processAuth(peerConnection, peerId, data);
-          break;
+          return this._processAuth(peerConnection, peerId, data);
         case PeerDataCommands.AuthOk:
-          this._processAuth(peerConnection, peerId, data);
-          break;
+          return this._processAuthOk(peerConnection, peerId, data);
+        case PeerDataCommands.Status:
+          return this._processStatus(peerConnection, peerId, data);
         default:
-          this.send(peerId, this.craftUnauthorized());
-          break;
+          return this.send(peerId, this.craftUnauthorized());
       }
     } else {
       switch(data.command) {
@@ -183,21 +182,38 @@ export class PeeringService {
           // TODO: Perform sync
           break;
         default:
-          this.send(peerId, this.craftBadRequest(data));
-          break;
+          return this.send(peerId, this.craftBadRequest(data));
       }
     }
 
-    return true;
+    return false;
   }
 
-  private _processAuth(peerConnection: PeerConnection, peerId: string, data: PeerData): boolean {
+  private async _processStatus(peerConnection: PeerConnection, peerId: string, data: PeerData): Promise<boolean> {
+    const authorizedPeer: AuthorizedPeer|null = this.getAuthorizedPeerById(peerId);
+
+    const code: number = get(data, 'code', -1);
+    switch(code) {
+      case FORBIDDEN:
+        this.removeAuthorizedPeerById(peerId);
+        await this.disconnect(peerId);
+        return true;
+      case UNAUTHORIZED:
+        return this._sendAuth(peerId);
+      default:
+        return false;
+    }
+
+    return false;
+  }
+
+  private async _processAuth(peerConnection: PeerConnection, peerId: string, data: PeerData): Promise<boolean> {
     const authorizedPeer: AuthorizedPeer|null = this.getAuthorizedPeerById(peerId);
 
     if(authorizedPeer === null) {
       console.warn(`Received Auth request from peer ${peerId} which is not (anymore?) in the authorized peers list. Disconnecting ...`);
-      this.send(peerId, this.craftForbidden());
-      this.disconnect(peerId);
+      await this.send(peerId, this.craftForbidden());
+      await this.disconnect(peerId);
       return false;
     }
 
@@ -215,13 +231,13 @@ export class PeeringService {
     return true;
   }
 
-  private _processAuthOk(peerConnection: PeerConnection, peerId: string, data: PeerData): boolean {
+  private async _processAuthOk(peerConnection: PeerConnection, peerId: string, data: PeerData): Promise<boolean> {
     const authorizedPeer: AuthorizedPeer|null = this.getAuthorizedPeerById(peerId);
 
     if(authorizedPeer === null) {
       console.warn(`Received AuthOk response from peer ${peerId} which is not (anymore?) in the authorized peers list. Disconnecting ...`);
-      this.send(peerId, this.craftForbidden());
-      this.disconnect(peerId);
+      await this.send(peerId, this.craftForbidden());
+      await this.disconnect(peerId);
       return false;
     }
 
@@ -229,28 +245,31 @@ export class PeeringService {
     return true;
   }
 
+  private async _sendAuth(peerId: string): Promise<any> {
+    const authorizedPeer: AuthorizedPeer|null = this.getAuthorizedPeerById(peerId);
+
+    if(authorizedPeer === null) {
+      console.warn(`Connected to peer ${peerId} which is not (anymore?) in the authorized peers list. Disconnecting ...`);
+      await this.send(peerId, this.craftForbidden());
+      await this.disconnect(peerId);
+      return null;
+    }
+
+    return this.send(peerId, this.craftAuth(authorizedPeer.localKey, authorizedPeer.remoteKey));
+  }
+
   private _handleConnection(conn: DataConnection, connectFulfillment?: Function, connectRejection?: Function): boolean {
     // 'open' is only for outgoing connections that were initialized through
     // connect()
     conn.on('open', async () => {
-      const peerId: string = conn.peer;
+      const peerId: string = this._addConnection(conn);
       console.debug(`Connected to peer ${peerId}!`);
 
-      const connectedPeerId: string = this._addConnection(conn);
-      const authorizedPeer: AuthorizedPeer|null = this.getAuthorizedPeerById(connectedPeerId);
-
-      if(authorizedPeer === null) {
-        console.warn(`Connected to peer ${peerId} which is not (anymore?) in the authorized peers list. Disconnecting ...`);
-        this.send(peerId, this.craftForbidden());
-        this.disconnect(peerId);
-        return false;
-      }
-
       try {
-        await this.send(connectedPeerId, this.craftAuth(authorizedPeer.localKey, authorizedPeer.remoteKey));
+        await this._sendAuth(peerId);
 
         if(typeof connectFulfillment !== 'undefined') {
-          return connectFulfillment(connectedPeerId);
+          return connectFulfillment(peerId);
         }
       } catch(err) {
         console.error(err);
@@ -260,10 +279,10 @@ export class PeeringService {
       }
     });
 
-    conn.on('data', (data: PeerData) => {
+    conn.on('data', async (data: PeerData) => {
       console.debug(`Data:`);
       console.debug(data);
-      this._processData(conn.peer, data);
+      return this._processData(conn.peer, data);
     });
 
     conn.on('close', () => {
@@ -386,6 +405,17 @@ export class PeeringService {
     }
 
     return this._authorizedPeers[peerId];
+  }
+
+  public removeAuthorizedPeerById(peerId: string): AuthorizedPeer|null {
+    if(this.isAuthorizedPeerById(peerId) === false) {
+      return null;
+    }
+
+    let removedAuthorizedPeer: AuthorizedPeer = cloneDeep(this._authorizedPeers[peerId]);
+    delete this._authorizedPeers[peerId];
+
+    return removedAuthorizedPeer;
   }
 
   public async syncAuthorizedPeersAndConnections(removeConnections: boolean, makeConnections: boolean): Promise<Array<Array<string>>> {
