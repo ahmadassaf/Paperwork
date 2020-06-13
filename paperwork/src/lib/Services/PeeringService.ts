@@ -1,5 +1,7 @@
 import Peer, { DataConnection } from 'peerjs';
-import { get, difference } from 'lodash';
+import { get, difference, merge } from 'lodash';
+import { OK, BAD_REQUEST, UNAUTHORIZED, FORBIDDEN } from 'http-status-codes';
+import { uuid } from 'uuidv4';
 
 export interface PeerServer {
   host?: string,
@@ -32,11 +34,25 @@ export interface AuthorizedPeers {
 
 export interface PeerConnection {
   connection: DataConnection;
-  authenticated: boolean;
+  authed: boolean;
 }
 
 export interface PeerConnections {
   [peerId: string]: PeerConnection;
+}
+
+export enum PeerDataCommands {
+  Status = 0,
+  Auth,
+  Sync
+}
+
+export interface PeerData {
+  id: string;
+  command: PeerDataCommands;
+  code: number;
+  timestamp: Date;
+  payload?: any;
 }
 
 export class PeeringService {
@@ -60,9 +76,13 @@ export class PeeringService {
     this._authorizedPeers = {};
     this._connections = {};
 
+    /**
+     * Emitted when a connection to the PeerServer is established.
+     */
     this._peer.on('open', (id) => {
+      console.info(`PeeringService connected to the peer server and will accept new connections at its own ID '${id}' now!`);
+
       this._id = id;
-      console.log(`My ID: ${this._id}`);
 
       const fn: Function|null = get(this._config, 'handlers.onOpen', null);
       if(fn !== null) {
@@ -70,9 +90,19 @@ export class PeeringService {
       }
     });
 
+    /**
+     * Emitted when a new data connection is established from a remote peer.
+     */
     this._peer.on('connection', (conn: DataConnection) => {
-      console.log(`New connection:`);
-      console.log(conn);
+      const peerId: string = conn.peer;
+      console.log(`PeeringService received a new connection from peer ID: ${peerId}`);
+
+      if(this._authorizedPeers.hasOwnProperty(peerId) === false) {
+        console.error(`Peer ID ${peerId} not allowed to connect! Disconnecting ...`);
+        conn.send(this.craftForbidden());
+        conn.close();
+        return;
+      }
 
       this._addConnection(conn);
       this._handleConnection(conn);
@@ -83,19 +113,26 @@ export class PeeringService {
       }
     });
 
+    /**
+     * Emitted when the peer is disconnected from the signalling server, either
+     * manually or because the connection to the signalling server was lost.
+     */
     this._peer.on('disconnected', () => {
-      console.log(`Disconnetced! Reconnecting ...`);
+      console.info(`PeeringService got disconnected from the peer server! Reconnecting ...`);
+      this._peer.reconnect();
 
       const fn: Function|null = get(this._config, 'handlers.onDisconnected', null);
       if(fn !== null) {
         fn();
       }
-
-      this._peer.reconnect();
     });
 
+    /**
+     * Emitted when the peer is destroyed and can no longer accept or create any
+     * new connections.
+     */
     this._peer.on('close', () => {
-      console.log(`Closed!`);
+      console.warn(`PeeringService was destroyed and won't accept any new connections`);
 
       const fn: Function|null = get(this._config, 'handlers.onClose', null);
       if(fn !== null) {
@@ -103,7 +140,12 @@ export class PeeringService {
       }
     });
 
+    /**
+     * Errors on the peer are almost always fatal and will destroy the peer.
+     * Errors from the underlying socket and PeerConnections are forwarded here.
+     */
     this._peer.on('error', (err) => {
+      console.error(`PeeringService failed badly and won't accept any new connections:`);
       console.error(err);
 
       const fn: Function|null = get(this._config, 'handlers.onError', null);
@@ -113,19 +155,78 @@ export class PeeringService {
     });
   }
 
+  private _processData(peerId: string, data: PeerData): boolean {
+    const peerConnection: PeerConnection|null = this._getPeerConnectionById(peerId);
+
+    if(peerConnection === null) {
+      console.warn(`Received data from ${peerId} but peer seems to have disconnected before it was processed: ${JSON.stringify(data)}`);
+      return false;
+    }
+
+    if(peerConnection.authed === false) {
+      switch(data.command) {
+        case PeerDataCommands.Auth:
+          this._processAuth(peerConnection, peerId, data);
+          break;
+        default:
+          this.send(peerId, this.craftUnauthorized());
+          break;
+      }
+    } else {
+      switch(data.command) {
+        case PeerDataCommands.Sync:
+          // TODO: Perform sync
+          break;
+        default:
+          this.send(peerId, this.craftBadRequest(data));
+          break;
+      }
+    }
+
+    return true;
+  }
+
+  private _processAuth(peerConnection: PeerConnection, peerId: string, data: PeerData): boolean {
+    const authorizedPeer: AuthorizedPeer|null = this.getAuthorizedPeerById(peerId);
+
+    if(authorizedPeer === null) {
+      console.warn(`Received Auth request from peer ${peerId} which is not (anymore?) in the authorized peers list. Disconnecting ...`);
+      this.send(peerId, this.craftForbidden());
+      this.disconnect(peerId);
+      return false;
+    }
+
+    const authLocalKey: string = get(data, 'payload.yourKey', '');
+    const authRemoteKey: string = get(data, 'payload.myKey', '');
+    if(authorizedPeer.localKey === authLocalKey) {
+      console.log(`Auth of peer ${peerId} was successful!`);
+      authorizedPeer.remoteKey = authRemoteKey;
+      // TODO: Emit update to authoriedPeers so it can be persisted
+      peerConnection.authed = true;
+      this.send(peerId, this.craftAuthOk());
+      return true;
+    }
+
+    return true;
+  }
+
   private _handleConnection(conn: DataConnection, connectFulfillment?: Function, connectRejection?: Function): boolean {
+    // 'open' is only for outgoing connections that were initialized through
+    // connect()
     conn.on('open', () => {
-      console.log(`Connected:`);
-      console.log(conn.peer);
+      const peerId: string = conn.peer;
+      console.log(`Connected: ${peerId}`);
+
       const connectedPeerId: string = this._addConnection(conn);
       if(typeof connectFulfillment === 'function') {
         return connectFulfillment(connectedPeerId);
       }
     });
 
-    conn.on('data', (data: any) => {
+    conn.on('data', (data: PeerData) => {
       console.log(`Data:`);
       console.log(data);
+      this._processData(conn.peer, data);
     });
 
     conn.on('close', () => {
@@ -168,12 +269,20 @@ export class PeeringService {
     return this._connections[peerId].connection;
   }
 
+  private _getPeerConnectionById(peerId: string): PeerConnection|null {
+    if(this._hasConnectionById(peerId) === false) {
+      return null;
+    }
+
+    return this._connections[peerId];
+  }
+
   private _addConnection(conn: DataConnection): string {
     const peerId: string = conn.peer;
 
     this._connections[peerId] = {
       'connection': conn,
-      'authenticated': false
+      'authed': false
     };
 
     return peerId;
@@ -214,6 +323,23 @@ export class PeeringService {
 
   public getAuthorizedPeers(): AuthorizedPeers {
     return this._authorizedPeers;
+  }
+
+  public isAuthorizedPeerById(peerId: string): boolean {
+    if(this._authorizedPeers.hasOwnProperty(peerId) === true
+    && this._authorizedPeers[peerId] !== null) {
+      return true;
+    }
+
+    return false;
+  }
+
+  public getAuthorizedPeerById(peerId: string): AuthorizedPeer|null {
+    if(this.isAuthorizedPeerById(peerId) === false) {
+      return null;
+    }
+
+    return this._authorizedPeers[peerId];
   }
 
   public async syncAuthorizedPeersAndConnections(removeConnections: boolean, makeConnections: boolean): Promise<Array<Array<string>>> {
@@ -279,7 +405,7 @@ export class PeeringService {
     return peerId;
   }
 
-  public async send(peerId: string, data: any): Promise<any> {
+  public async send(peerId: string, data: PeerData): Promise<any> {
     if(this._hasConnectionById(peerId) === false) {
       throw new Error(`Peer ${peerId} not connected, cannot send data!`);
     }
@@ -287,7 +413,7 @@ export class PeeringService {
     return this._connections[peerId].connection.send(data);
   }
 
-  public async sendAll(data: any): Promise<any> {
+  public async sendAll(data: PeerData): Promise<any> {
     let sendPromises: Array<Promise<any>> = [];
 
     Object.keys(this._connections).forEach((connectedPeerId: string) => {
@@ -295,5 +421,43 @@ export class PeeringService {
     })
 
     return Promise.all(sendPromises);
+  }
+
+  public craftSkeleton(): PeerData {
+    return {
+      'id': uuid(),
+      'command': -1,
+      'timestamp': new Date(),
+      'code': -1
+    };
+  }
+
+  public craftAuthOk(): PeerData {
+    return merge(this.craftSkeleton(), {
+      'command': PeerDataCommands.Auth,
+      'code': OK
+    });
+  }
+
+  public craftBadRequest(payload: any): PeerData {
+    return merge(this.craftSkeleton(), {
+      'command': PeerDataCommands.Status,
+      'code': BAD_REQUEST,
+      'payload': payload
+    });
+  }
+
+  public craftUnauthorized(): PeerData {
+    return merge(this.craftSkeleton(), {
+      'command': PeerDataCommands.Status,
+      'code': UNAUTHORIZED
+    });
+  }
+
+  public craftForbidden(): PeerData {
+    return merge(this.craftSkeleton(), {
+      'command': PeerDataCommands.Status,
+      'code': FORBIDDEN
+    });
   }
 }
