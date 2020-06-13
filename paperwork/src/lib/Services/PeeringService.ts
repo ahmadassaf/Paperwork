@@ -21,10 +21,10 @@ export interface PeeringServiceConfig {
 }
 
 export class PeeringService {
-  _config: PeeringServiceConfig;
-  _peer: Peer;
-  _id?: string;
-  _connections: Array<DataConnection>;
+  private _config: PeeringServiceConfig;
+  private _peer: Peer;
+  private _id?: string;
+  private _connections: Array<DataConnection>;
 
   constructor(config: PeeringServiceConfig) {
     this._config = config;
@@ -92,7 +92,7 @@ export class PeeringService {
     });
   }
 
-  _handle(conn: DataConnection): boolean {
+  private _handle(conn: DataConnection): boolean {
     conn.on('data', (data: string) => {
       console.log(`Data:`);
       console.log(data);
@@ -111,7 +111,7 @@ export class PeeringService {
     return true;
   }
 
-  async connect(id: string): Promise<number> {
+  public async connect(id: string): Promise<number> {
     return new Promise((fulfill, reject) => {
       const conn = this._peer.connect(id, { 'reliable': true });
 
@@ -130,7 +130,7 @@ export class PeeringService {
     });
   }
 
-  send(connIdx: number, data: string) {
+  public async send(connIdx: number, data: string): Promise<any> {
     return this._connections[connIdx].send(data);
   }
 
