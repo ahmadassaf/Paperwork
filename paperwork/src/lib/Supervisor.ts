@@ -59,6 +59,37 @@ class Supervisor {
 
     return true;
   }
+
+  public async test(otherPeerId: string): Promise<void> {
+    console.log('Running test ...');
+
+    if(this._peering === null) {
+      console.log('PeeringService not ready yet.');
+      return;
+    }
+
+    if(this._peering.getMyPeerId() === otherPeerId) {
+      console.log('I am the other peer, stopping test');
+      return;
+    }
+
+    this._peering.setAuthorizedPeers({
+      [otherPeerId]: {
+        'localKey': 'local',
+        'remoteKey': 'remote',
+        'timestamp': Date.now()
+      }
+    });
+
+    setTimeout(async () => {
+      if(this._peering === null) {
+        console.log('PeeringService not ready yet.');
+        return;
+      }
+
+      const conn = await this._peering.connect(otherPeerId);
+    }, 4000);
+  }
 }
 
 const supervisor = new Supervisor();

@@ -25,7 +25,13 @@ import '@ionic/react/css/display.css';
 import './theme/variables.css';
 
 import Supervisor from './lib/Supervisor';
-Supervisor.launch();
+
+const testing = async() => {
+  await Supervisor.launch();
+  await Supervisor.test('94315b83-7163-4980-ae6e-8e55425b4051');
+}
+
+testing();
 
 // const notesService = new NotesService();
 // const bla = async() => {
