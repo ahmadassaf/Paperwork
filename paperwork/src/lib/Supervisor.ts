@@ -28,7 +28,7 @@ class Supervisor {
     return true;
   }
 
-  async launch() {
+  public async launch() {
     this._settings = new SettingsService();
     await this._settings.ready();
 
