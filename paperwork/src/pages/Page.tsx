@@ -4,14 +4,6 @@ import { useParams } from 'react-router';
 import ExploreContainer from '../components/ExploreContainer';
 import './Page.css';
 
-import { PeeringService } from '../lib/PeeringService';
-
-const peeringService = new PeeringService({
-  'peerServer': {
-    'host': '127.0.0.1'
-  }
-});
-
 const Page: React.FC = () => {
 
   const { name } = useParams<{ name: string; }>();
@@ -19,17 +11,17 @@ const Page: React.FC = () => {
   const [toast, setToast] = useState('');
 
   const cmdConnect = async () => {
-    console.log('Connecting ...');
-    console.log(text);
-    if(typeof text === 'string') {
-      try {
-        const connId: number = await peeringService.connect(text);
-        console.log(connId);
-      } catch(err) {
-        console.error(err);
-        setToast('Could not connect!');
-      }
-    }
+    // console.log('Connecting ...');
+    // console.log(text);
+    // if(typeof text === 'string') {
+    //   try {
+    //     const connId: number = await peeringService.connect(text);
+    //     console.log(connId);
+    //   } catch(err) {
+    //     console.error(err);
+    //     setToast('Could not connect!');
+    //   }
+    // }
   }
 
   return (

@@ -24,25 +24,24 @@ import '@ionic/react/css/display.css';
 /* Theme variables */
 import './theme/variables.css';
 
-import { NotesService } from './lib/NotesService';
 
-const notesService = new NotesService();
-const bla = async() => {
-  await notesService.ready();
-  const newNoteId = await notesService.create({
-    'title': 'Test'
-  });
-  console.log(newNoteId);
-  // await notesService.update(newNoteId, {
-  //   'title': 'Test 2'
-  // });
-  const index = await notesService.index();
-  console.log(index);
-};
+// const notesService = new NotesService();
+// const bla = async() => {
+//   await notesService.ready();
+//   const newNoteId = await notesService.create({
+//     'title': 'Test'
+//   });
+//   console.log(newNoteId);
+//   await notesService.update(newNoteId, {
+//     'title': 'Test 2'
+//   });
+//   const index = await notesService.index();
+//   console.log(index);
+// };
 
 const App: React.FC = () => {
 
-  bla();
+  // bla();
 
   return (
     <IonApp>
