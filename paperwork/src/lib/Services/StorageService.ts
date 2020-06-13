@@ -26,10 +26,10 @@ export interface StorageServiceIndex {
 }
 
 export class StorageService {
-  _txStorageConfig: StorageConfig;
-  _txStorage: Storage;
-  _idxStorageConfig: StorageConfig;
-  _idxStorage: Storage;
+  private _txStorageConfig: StorageConfig;
+  private _txStorage: Storage;
+  private _idxStorageConfig: StorageConfig;
+  private _idxStorage: Storage;
 
   constructor(dbName: string) {
     this._txStorageConfig = {
@@ -49,11 +49,11 @@ export class StorageService {
     this._idxStorage = new Storage(this._idxStorageConfig);
   }
 
-  _materialize(view: string, diff: string): string {
+  private _materialize(view: string, diff: string): string {
     return applyPatch(view, diff);
   }
 
-  async ready(): Promise<boolean> {
+  public async ready(): Promise<boolean> {
     const localForageTx = await this._txStorage.ready();
     console.log(localForageTx);
     const localForageIdx = await this._idxStorage.ready();
@@ -61,15 +61,15 @@ export class StorageService {
     return true;
   }
 
-  async index(): Promise<Array<string>> {
+  public async index(): Promise<Array<string>> {
     return this._idxStorage.keys();
   }
 
-  async indexTx(): Promise<Array<string>> {
+  public async indexTx(): Promise<Array<string>> {
     return this._txStorage.keys();
   }
 
-  async show(id: string): Promise<StorageServiceIndex> {
+  public async show(id: string): Promise<StorageServiceIndex> {
     if(isUuid(id) === false) {
       throw new Error('Not a valid UUID!');
     }
@@ -85,7 +85,7 @@ export class StorageService {
     return idx;
   }
 
-  async showTx(id: string): Promise<StorageServiceTransaction> {
+  public async showTx(id: string): Promise<StorageServiceTransaction> {
     if(isUuid(id) === false) {
       throw new Error('Not a valid UUID!');
     }
@@ -93,7 +93,7 @@ export class StorageService {
     return this._txStorage.get(id);
   }
 
-  async create(data: Object): Promise<string> {
+  public async create(data: Object): Promise<string> {
     const id: string = uuid();
 
     const dataStr = JSON.stringify(data, null, 2);
@@ -113,7 +113,7 @@ export class StorageService {
     return id;
   }
 
-  async createTx(staticId: string, diff: string): Promise<string> {
+  public async createTx(staticId: string, diff: string): Promise<string> {
     const id: string = uuid();
 
     const transaction: StorageServiceTransaction = {
@@ -128,7 +128,7 @@ export class StorageService {
     return id;
   }
 
-  async update(id: string, data: Object): Promise<string> {
+  public async update(id: string, data: Object): Promise<string> {
     const idx: StorageServiceIndex = await this.show(id);
 
     const dataStr = JSON.stringify(data, null, 2);
@@ -148,7 +148,7 @@ export class StorageService {
     return id;
   }
 
-  async updateTx(id: string, diff: string): Promise<string> {
+  public async updateTx(id: string, diff: string): Promise<string> {
     const existingEntry: StorageServiceTransaction = await this.showTx(id);
     const revisionId: string = uuid();
 
@@ -164,7 +164,7 @@ export class StorageService {
     return revisionId;
   }
 
-  async destroy(id: string): Promise<string> {
+  public async destroy(id: string): Promise<string> {
     const idx: StorageServiceIndex = await this.show(id);
 
     const updatedIdx: StorageServiceIndex = merge(idx, {
@@ -175,7 +175,7 @@ export class StorageService {
     return id;
   }
 
-  async destroyTx(id: string): Promise<string> {
+  public async destroyTx(id: string): Promise<string> {
     return id;
   }
 }
