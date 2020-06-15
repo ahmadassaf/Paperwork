@@ -87,7 +87,11 @@ class Supervisor {
         return;
       }
 
-      const conn = await this._peering.connect(otherPeerId);
+      try {
+        const conn = await this._peering.connect(otherPeerId);
+      } catch(err) {
+        console.error(err);
+      }
     }, 4000);
   }
 }
