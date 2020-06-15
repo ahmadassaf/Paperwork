@@ -225,7 +225,7 @@ export class PeeringService {
     } else {
       switch(data.command) {
         case PeerDataCommands.Sync:
-          // TODO: Perform sync
+          return this._processSync(peerConnection, peerId, data);
           break;
         default:
           return this.send(peerId, this.craftBadRequest(data));
@@ -289,6 +289,14 @@ export class PeeringService {
     }
 
     peerConnection.authed = true;
+    return true;
+  }
+
+  private async _processSync(peerConnection: PeerConnection, peerId: string, data: PeerData): Promise<boolean> {
+    const entries: string = get(data, 'payload', '');
+
+    // TODO: Sync entries
+
     return true;
   }
 
@@ -487,7 +495,6 @@ export class PeeringService {
     }
 
     this._removeConnectionById(peerId);
-
     return peerId;
   }
 
