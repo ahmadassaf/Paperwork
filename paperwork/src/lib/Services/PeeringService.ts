@@ -259,8 +259,6 @@ export class PeeringService {
   }
 
   private _handleConnection(conn: DataConnection, connectFulfillment?: Function, connectRejection?: Function): boolean {
-    // 'open' is only for outgoing connections that were initialized through
-    // connect()
     conn.on('open', async () => {
       const peerId: string = this._addConnection(conn);
       console.debug(`Connected to peer ${peerId}!`);
