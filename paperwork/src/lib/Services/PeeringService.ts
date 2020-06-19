@@ -1,4 +1,5 @@
 import Peer, { DataConnection } from 'peerjs';
+import EventEmitter from 'eventemitter3';
 import { get, difference, merge, delay, cloneDeep } from 'lodash';
 import { OK, BAD_REQUEST, UNAUTHORIZED, FORBIDDEN } from 'http-status-codes';
 import { uuid } from 'uuidv4';
@@ -14,13 +15,6 @@ export interface PeerServer {
 export interface PeeringServiceConfig {
   id?: string,
   peerServer?: PeerServer,
-  handlers?: {
-    onOpen?: Function,
-    onConnection?: Function,
-    onDisconnected?: Function,
-    onClose?: Function,
-    onError?: Function,
-  }
 }
 
 export interface AuthorizedPeer {
@@ -57,96 +51,20 @@ export interface PeerData {
   payload?: any;
 }
 
-export class PeeringService {
+export class PeeringService extends EventEmitter {
   private _config: PeeringServiceConfig;
-  private _peer: Peer;
+  private _peer?: Peer;
   private _id?: string;
   private _authorizedPeers: AuthorizedPeers;
   private _connections: PeerConnections;
 
   constructor(config: PeeringServiceConfig) {
+    super();
     this._config = config;
     this._id = get(this._config, 'id', undefined);
 
-    console.log(`Initializing PeeringService with peer ID ${this._id} ...`);
-    this._peer = new Peer(this._id, {
-      'host': get(this._config, 'peerServer.host', '127.0.0.1'),
-      'key': get(this._config, 'peerServer.key', 'peerjs'),
-      'port': get(this._config, 'peerServer.port', 9000),
-      'path': get(this._config, 'peerServer.path', '/peerjs')
-    });
-
     this._authorizedPeers = {};
     this._connections = {};
-
-    /**
-     * Emitted when a connection to the PeerServer is established.
-     */
-    this._peer.on('open', (id) => {
-      console.info(`PeeringService connected to the peer server and will accept new connections at its own ID '${id}' now!`);
-
-      this._id = id;
-
-      const fn: Function|null = get(this._config, 'handlers.onOpen', null);
-      if(fn !== null) {
-        fn(id);
-      }
-    });
-
-    /**
-     * Emitted when a new data connection is established from a remote peer.
-     */
-    this._peer.on('connection', async (conn: DataConnection) => {
-      const peerId: string = conn.peer;
-      console.log(`PeeringService received a new connection from peer ID: ${peerId}`);
-      this._handleConnection(conn, true);
-
-      const fn: Function|null = get(this._config, 'handlers.onConnection', null);
-      if(fn !== null) {
-        fn(conn);
-      }
-    });
-
-    /**
-     * Emitted when the peer is disconnected from the signalling server, either
-     * manually or because the connection to the signalling server was lost.
-     */
-    this._peer.on('disconnected', () => {
-      console.info(`PeeringService got disconnected from the peer server! Reconnecting ...`);
-      this._peer.reconnect();
-
-      const fn: Function|null = get(this._config, 'handlers.onDisconnected', null);
-      if(fn !== null) {
-        fn();
-      }
-    });
-
-    /**
-     * Emitted when the peer is destroyed and can no longer accept or create any
-     * new connections.
-     */
-    this._peer.on('close', () => {
-      console.warn(`PeeringService was destroyed and won't accept any new connections`);
-
-      const fn: Function|null = get(this._config, 'handlers.onClose', null);
-      if(fn !== null) {
-        fn();
-      }
-    });
-
-    /**
-     * Errors on the peer are almost always fatal and will destroy the peer.
-     * Errors from the underlying socket and PeerConnections are forwarded here.
-     */
-    this._peer.on('error', (err) => {
-      console.error(`PeeringService failed badly and won't accept any new connections:`);
-      console.error(err);
-
-      const fn: Function|null = get(this._config, 'handlers.onError', null);
-      if(fn !== null) {
-        fn(err);
-      }
-    });
   }
 
   private _handleConnection(conn: DataConnection, receivedConnection: boolean, connectFulfillment?: Function, connectRejection?: Function): boolean {
@@ -165,17 +83,17 @@ export class PeeringService {
 
       peerId = this._addConnection(conn);
 
-      if(receivedConnection === false) {
-        try {
+      try {
+        if(receivedConnection === false) {
           await sleep(500);
           await this._sendAuth(peerId);
-          if(typeof connectFulfillment !== 'undefined') {
-            return connectFulfillment(peerId);
-          }
-        } catch(err) {
-          if(typeof connectRejection !== 'undefined') {
-            return connectRejection(err);
-          }
+        }
+        if(typeof connectFulfillment !== 'undefined') {
+          return connectFulfillment(peerId);
+        }
+      } catch(err) {
+        if(typeof connectRejection !== 'undefined') {
+          return connectRejection(err);
         }
       }
     });
@@ -384,6 +302,82 @@ export class PeeringService {
     return peerId;
   }
 
+  public get peer(): Peer {
+    if(typeof this._peer === 'undefined'
+    || this._peer === null) {
+      return this.initialize();
+    }
+
+    return this._peer;
+  }
+
+  public set peer(peer: Peer) {
+    this._peer = peer;
+  }
+
+  public initialize(): Peer {
+    console.log(`Initializing PeeringService with peer ID ${this._id} ...`);
+    this._peer = new Peer(this._id, {
+      'host': get(this._config, 'peerServer.host', '127.0.0.1'),
+      'key': get(this._config, 'peerServer.key', 'peerjs'),
+      'port': get(this._config, 'peerServer.port', 9000),
+      'path': get(this._config, 'peerServer.path', '/peerjs')
+    });
+
+    /**
+     * Emitted when a connection to the PeerServer is established.
+     */
+    this._peer.on('open', (id) => {
+      console.info(`PeeringService connected to the peer server and will accept new connections at its own ID '${id}' now!`);
+      this._id = id;
+      this.emit('online', this._id);
+    });
+
+    /**
+     * Emitted when a new data connection is established from a remote peer.
+     */
+    this._peer.on('connection', async (conn: DataConnection) => {
+      const peerId: string = conn.peer;
+      console.log(`PeeringService received a new connection from peer ID: ${peerId}`);
+      this._handleConnection(conn, true, (peerId: string) => {
+        this.emit('incomingConnectionSucceeded', peerId);
+      }, (err: Error) => {
+        this.emit('incomingConnectionFailed', err);
+      });
+    });
+
+    /**
+     * Emitted when the peer is disconnected from the signalling server, either
+     * manually or because the connection to the signalling server was lost.
+     */
+    this._peer.on('disconnected', () => {
+      console.info(`PeeringService got disconnected from the peer server! Reconnecting ...`);
+      this.emit('lost');
+      this.peer.reconnect();
+    });
+
+    /**
+     * Emitted when the peer is destroyed and can no longer accept or create any
+     * new connections.
+     */
+    this._peer.on('close', () => {
+      console.warn(`PeeringService was destroyed and won't accept any new connections`);
+      this.emit('offline');
+    });
+
+    /**
+     * Errors on the peer are almost always fatal and will destroy the peer.
+     * Errors from the underlying socket and PeerConnections are forwarded here.
+     */
+    this._peer.on('error', (err) => {
+      console.error(`PeeringService failed badly and won't accept any new connections:`);
+      console.error(err);
+      this.emit('dead', err);
+    });
+
+    return this._peer;
+  }
+
   public getMyPeerId(): string {
     if(typeof this._id === 'string') {
       return this._id;
@@ -484,7 +478,7 @@ export class PeeringService {
         throw new Error(`Cannot connecto to peer ${peerId} as it is not within the authorized peers list!`);
       }
 
-      const conn = this._peer.connect(peerId, { 'reliable': true });
+      const conn = this.peer.connect(peerId, { 'reliable': true });
       this._handleConnection(conn, false, fulfill, reject);
     });
   }
