@@ -14,15 +14,15 @@ export interface StorageServiceTransaction {
   staticId: string,
   diff: string,
   revisesId: string|null,
-  timestamp: Date,
+  timestamp: number,
 }
 
 export interface StorageServiceIndex {
   latestTxId: string,
   materializedView: string
-  createdAt: Date,
-  updatedAt: Date,
-  deletedAt: Date|null
+  createdAt: number,
+  updatedAt: number,
+  deletedAt: number|null
 }
 
 export class StorageService {
@@ -86,7 +86,8 @@ export class StorageService {
   }
 
   public async showTx(id: string): Promise<StorageServiceTransaction> {
-    if(isUuid(id) === false) {
+    const [idTimestamp, idUuid]: Array<string> = id.split(':');
+    if(isUuid(idUuid) === false) {
       throw new Error('Not a valid UUID!');
     }
 
@@ -94,6 +95,7 @@ export class StorageService {
   }
 
   public async create(data: Object): Promise<string> {
+    const now: number = Date.now();
     const id: string = uuid();
 
     const dataStr = JSON.stringify(data, null, 2);
@@ -103,8 +105,8 @@ export class StorageService {
 
     const idx: StorageServiceIndex = {
       'latestTxId': txId,
-      'createdAt': new Date(),
-      'updatedAt': new Date(),
+      'createdAt': now,
+      'updatedAt': now,
       'deletedAt': null,
       'materializedView': this._materialize('', diff)
     }
@@ -114,14 +116,15 @@ export class StorageService {
   }
 
   public async createTx(staticId: string, diff: string): Promise<string> {
-    const id: string = uuid();
+    const now: number = Date.now();
+    const id: string = `${now}:${uuid()}`;
 
     const transaction: StorageServiceTransaction = {
       'type': StorageServiceTransactionTypes.Create,
       'staticId': staticId,
       'diff': diff,
       'revisesId': null,
-      'timestamp': new Date()
+      'timestamp': now
     };
 
     await this._txStorage.set(id, transaction);
@@ -140,7 +143,7 @@ export class StorageService {
       'latestTxId': txId,
       'materializedView': this._materialize(idx.materializedView, diff),
       'createdAt': idx.createdAt,
-      'updatedAt': new Date(),
+      'updatedAt': Date.now(),
       'deletedAt': null
     }
 
@@ -157,7 +160,7 @@ export class StorageService {
       'staticId': existingEntry.staticId,
       'diff': diff,
       'revisesId': id,
-      'timestamp': new Date()
+      'timestamp': Date.now()
     };
 
     await this._txStorage.set(revisionId, transaction);
