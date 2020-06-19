@@ -24,7 +24,7 @@ class Supervisor {
     this._notes = new NotesService();
   }
 
-  private async _peeringHandleOnOpen(id: string): Promise<boolean> {
+  private async _peeringOnline(id: string): Promise<boolean> {
     if(this._settings === null) {
       throw new Error('Cannot store peer ID: SettingsService not available!');
     }
@@ -47,20 +47,17 @@ class Supervisor {
       this._peeringConfig.peerServer = this._peerServer;
     }
 
-    this._peeringConfig.handlers = {
-      'onOpen': (id: string) => {
-        return this._peeringHandleOnOpen(id);
-      }
-    }
-
     this._peering = new PeeringService(this._peeringConfig);
-
+    this._peering.on('online', (id: string) => {
+      this._peeringOnline(id);
+    });
+    this._peering.initialize();
     await this._notes.ready();
 
     return true;
   }
 
-  public async test(otherPeerId: string): Promise<void> {
+  public async test(notOtherPeerId: string, otherPeerId: string): Promise<void> {
     console.log('Running test ...');
 
     if(this._peering === null) {
@@ -69,30 +66,39 @@ class Supervisor {
     }
 
     if(this._peering.getMyPeerId() === otherPeerId) {
-      console.log('I am the other peer, stopping test');
-      return;
+      console.log('I am the other peer');
+
+      this._peering.setAuthorizedPeers({
+        [notOtherPeerId]: {
+          'localKey': 'OtherPeer',
+          'remoteKey': 'NotOtherPeer',
+          'timestamp': Date.now()
+        }
+      });
+    } else {
+      console.log('I am not the other peer');
+
+      this._peering.setAuthorizedPeers({
+        [otherPeerId]: {
+          'localKey': 'NotOtherPeer',
+          'remoteKey': 'OtherPeer',
+          'timestamp': Date.now()
+        }
+      });
+
+      setTimeout(async () => {
+        if(this._peering === null) {
+          console.log('PeeringService not ready yet.');
+          return;
+        }
+
+        try {
+          const conn = await this._peering.connect(otherPeerId);
+        } catch(err) {
+          console.error(err);
+        }
+      }, 4000);
     }
-
-    this._peering.setAuthorizedPeers({
-      [otherPeerId]: {
-        'localKey': 'local',
-        'remoteKey': 'remote',
-        'timestamp': Date.now()
-      }
-    });
-
-    setTimeout(async () => {
-      if(this._peering === null) {
-        console.log('PeeringService not ready yet.');
-        return;
-      }
-
-      try {
-        const conn = await this._peering.connect(otherPeerId);
-      } catch(err) {
-        console.error(err);
-      }
-    }, 4000);
   }
 }
 

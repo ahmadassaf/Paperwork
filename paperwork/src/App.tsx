@@ -28,7 +28,10 @@ import Supervisor from './lib/Supervisor';
 
 const testing = async() => {
   await Supervisor.launch();
-  await Supervisor.test('94315b83-7163-4980-ae6e-8e55425b4051');
+  await Supervisor.test(
+    '4c92ab72-2708-4112-a678-9314e6eee62a',
+    '94315b83-7163-4980-ae6e-8e55425b4051'
+  );
 }
 
 testing();
