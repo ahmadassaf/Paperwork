@@ -10,19 +10,21 @@ enum StorageServiceTransactionTypes {
 }
 
 export interface StorageServiceTransaction {
-  type: StorageServiceTransactionTypes,
-  staticId: string,
-  diff: string,
-  revisesId: string|null,
-  timestamp: number,
+  id: string;
+  type: StorageServiceTransactionTypes;
+  staticId: string;
+  diff: string;
+  revisesId: string|null;
+  timestamp: number;
 }
 
 export interface StorageServiceIndex {
-  latestTxId: string,
-  materializedView: string
-  createdAt: number,
-  updatedAt: number,
-  deletedAt: number|null
+  id: string;
+  latestTxId: string;
+  materializedView: string;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt: number|null;
 }
 
 export class StorageService {
@@ -85,6 +87,11 @@ export class StorageService {
     return this._txStorage.keys();
   }
 
+  public async showAll(ids: Array<string>): Promise<Array<StorageServiceIndex>> {
+    let showPromises: Array<Promise<StorageServiceIndex>> = ids.map((id: string) => this.show(id));
+    return Promise.all(showPromises);
+  }
+
   public async show(id: string): Promise<StorageServiceIndex> {
     if(isUuid(id) === false) {
       throw new Error('Not a valid UUID!');
@@ -120,6 +127,7 @@ export class StorageService {
     const txId: string = await this.createTx(id, diff);
 
     const idx: StorageServiceIndex = {
+      'id': id,
       'latestTxId': txId,
       'createdAt': now,
       'updatedAt': now,
@@ -136,6 +144,7 @@ export class StorageService {
     const id: string = `${now}:${uuid()}`;
 
     const transaction: StorageServiceTransaction = {
+      'id': id,
       'type': StorageServiceTransactionTypes.Create,
       'staticId': staticId,
       'diff': diff,
@@ -156,6 +165,7 @@ export class StorageService {
     const txId: string = await this.updateTx(idx.latestTxId, diff);
 
     const updatedIdx: StorageServiceIndex = {
+      'id': id,
       'latestTxId': txId,
       'materializedView': this._materialize(idx.materializedView, diff),
       'createdAt': idx.createdAt,
@@ -172,6 +182,7 @@ export class StorageService {
     const revisionId: string = uuid();
 
     const transaction: StorageServiceTransaction = {
+      'id': revisionId,
       'type': StorageServiceTransactionTypes.Update,
       'staticId': existingEntry.staticId,
       'diff': diff,
