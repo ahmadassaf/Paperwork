@@ -61,6 +61,22 @@ export class StorageService {
     return true;
   }
 
+  public async getTxChain(id: string): Promise<Array<StorageServiceTransaction>> {
+    const idx: StorageServiceIndex = await this.show(id);
+    return this._followTxChainLinks(idx.latestTxId);
+  }
+
+  private async _followTxChainLinks(txId: string): Promise<Array<StorageServiceTransaction>> {
+    let chain: Array<StorageServiceTransaction> = [];
+    const txLink: StorageServiceTransaction = await this.showTx(txId);
+    if(txLink.revisesId !== null) {
+      chain = await this._followTxChainLinks(txLink.revisesId);
+    }
+
+    chain.push(txLink);
+    return chain;
+  }
+
   public async index(): Promise<Array<string>> {
     return this._idxStorage.keys();
   }
