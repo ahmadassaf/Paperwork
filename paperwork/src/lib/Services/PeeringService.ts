@@ -50,6 +50,7 @@ export interface PeerData {
   code: number;
   timestamp: number;
   payload?: any;
+  version: number;
 }
 
 export class PeeringService extends EventEmitter {
@@ -529,7 +530,8 @@ export class PeeringService extends EventEmitter {
       'id': uuid(),
       'command': -1,
       'timestamp': Date.now(),
-      'code': -1
+      'code': -1,
+      'version': 1
     };
   }
 
