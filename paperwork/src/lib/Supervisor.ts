@@ -1,5 +1,5 @@
 import { SettingsService } from './Services/SettingsService';
-import { PeeringService, PeeringServiceConfig, PeerServer } from './Services/PeeringService';
+import { PeeringService, PeeringServiceConfig, PeerServer, AuthorizedPeers } from './Services/PeeringService';
 import { NotesService } from './Services/NotesService';
 
 class Supervisor {
@@ -7,6 +7,7 @@ class Supervisor {
 
   private _peerId: string|null;
   private _peerServer: PeerServer|null;
+  private _authorizedPeers: AuthorizedPeers|null;
   private _peeringConfig: PeeringServiceConfig;
   private _peering: PeeringService|null;
 
@@ -17,6 +18,7 @@ class Supervisor {
 
     this._peerId = null;
     this._peerServer = null;
+    this._authorizedPeers = null;
 
     this._peeringConfig = {};
     this._peering = null;
@@ -38,6 +40,7 @@ class Supervisor {
 
     this._peerId = await this._settings.getPeerId();
     this._peerServer = await this._settings.getPeerServer();
+    this._authorizedPeers = await this._settings.getAuthorizedPeers();
 
     if(this._peerId !== null) {
       this._peeringConfig.id = this._peerId;
@@ -47,10 +50,23 @@ class Supervisor {
       this._peeringConfig.peerServer = this._peerServer;
     }
 
+    if(this._authorizedPeers === null) {
+      this._authorizedPeers = {};
+    }
+
     this._peering = new PeeringService(this._peeringConfig);
+
     this._peering.on('online', (id: string) => {
       this._peeringOnline(id);
     });
+
+    this._peering.on('updatedAuthorizedPeers', (authorizedPeers: AuthorizedPeers) => {
+      console.debug(`Storing updated authorized peers in settings: ${JSON.stringify(authorizedPeers)}`);
+      this._authorizedPeers = authorizedPeers;
+      this._settings.setAuthorizedPeers(this._authorizedPeers);
+    });
+
+    this._peering.setAuthorizedPeers(this._authorizedPeers);
     this._peering.initialize();
     await this._notes.ready();
 
@@ -68,13 +84,13 @@ class Supervisor {
     if(this._peering.getMyPeerId() === otherPeerId) {
       console.log('I am the other peer');
 
-      this._peering.setAuthorizedPeers({
-        [notOtherPeerId]: {
-          'localKey': 'OtherPeer',
-          'remoteKey': 'NotOtherPeer',
-          'timestamp': Date.now()
-        }
-      });
+      // this._peering.setAuthorizedPeers({
+      //   [notOtherPeerId]: {
+      //     'localKey': 'OtherPeer',
+      //     'remoteKey': 'NotOtherPeer',
+      //     'timestamp': Date.now()
+      //   }
+      // });
     } else {
       console.log('I am not the other peer');
 

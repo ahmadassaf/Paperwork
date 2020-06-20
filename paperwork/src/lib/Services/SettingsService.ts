@@ -68,7 +68,7 @@ export class SettingsService {
     return this._setSetting('peerServer', peerServer);
   }
 
-  public async getAuthorizedPeers(): Promise<AuthorizedPeers> {
+  public async getAuthorizedPeers(): Promise<AuthorizedPeers|null> {
     return this._getSetting('authorizedPeers', true);
   }
 
