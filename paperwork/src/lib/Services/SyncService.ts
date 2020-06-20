@@ -75,7 +75,7 @@ export class SyncService {
     );
   }
 
-  public mergeTxChains(localChain: Array<StorageServiceTransaction>, remoteChain: Array<StorageServiceTransaction>): Array<StorageServiceTransaction> {
+  public async mergeTxChains(localChain: Array<StorageServiceTransaction>, remoteChain: Array<StorageServiceTransaction>, merger: Function): Promise<Array<StorageServiceTransaction>> {
     const localLastLink: StorageServiceTransaction|undefined = last(localChain);
     const remoteLastLink: StorageServiceTransaction|undefined = last(remoteChain);
 
@@ -154,9 +154,7 @@ export class SyncService {
      * If we reached this point it means that from the common link on both
      * chains have parted ways and contain of unrelated transactions.
      */
-
-     // TODO: Change design of function to allow external (async) merger
-     return newerChain;
+     return merger(newerChain, commonLinkInNewerChainIdx, olderChain, commonLinkInOlderChainIdx);
   }
 
 }
