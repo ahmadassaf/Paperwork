@@ -20,6 +20,7 @@ export interface PeeringServiceConfig {
 export interface AuthorizedPeer {
   localKey: string;
   remoteKey: string;
+
   timestamp: number;
 }
 
@@ -78,10 +79,14 @@ export class PeeringService extends EventEmitter {
         await this.send(conn, this.craftForbidden());
         console.log(`Closing connection to peer ID ${peerId} ...`);
         conn.close();
+        if(typeof connectRejection !== 'undefined') {
+          return connectRejection(new Error(`Peer ID ${peerId} not allowed to connect!`));
+        }
         return;
       }
 
       peerId = this._addConnection(conn);
+      this.emit('connectionEstablished', peerId);
 
       try {
         if(receivedConnection === false) {
@@ -108,11 +113,13 @@ export class PeeringService extends EventEmitter {
       const peerId: string = conn.peer;
       console.debug(`Closed connection to peer ${peerId}!`);
       this._removeConnection(conn);
+      this.emit('connectionClosed', peerId);
     });
 
     conn.on('error', async (err) => {
       console.error(err);
       this._removeConnection(conn);
+      this.emit('connectionErrored', err);
       if(typeof connectRejection !== 'undefined') {
         return connectRejection(err);
       }
@@ -187,8 +194,8 @@ export class PeeringService extends EventEmitter {
     if(authorizedPeer.localKey === authLocalKey) {
       console.log(`Auth of peer ${peerId} was successful!`);
       authorizedPeer.remoteKey = authRemoteKey;
-      // TODO: Emit update to authoriedPeers so it can be persisted
       peerConnection.authed = true;
+      this.emit('updatedAuthorizedPeers', this.getAuthorizedPeers());
       this.send(peerId, this.craftAuthOk());
       return true;
     }
