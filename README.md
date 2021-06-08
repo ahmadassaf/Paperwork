@@ -2,9 +2,7 @@ Paperwork
 =========
 [<img src="https://img.shields.io/matrix/paperwork:matrix.org.svg?color=%2361BCEE&label=JOIN%20THE%20CHAT&server_fqdn=matrix.org&style=for-the-badge"/>](https://riot.im/app/#/room/#paperwork:matrix.org)
 
-Paperwork is an open-source, self-hosted alternative to services like Evernote®, Microsoft OneNote® or Google Keep®
-
-<iframe src="https://player.vimeo.com/video/401737579" width="640" height="480" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
+Paperwork is an open-source, self-hosted alternative to services like Evernote®, Microsoft OneNote® or Google Keep® ([check video](https://player.vimeo.com/video/401737579))
 
 
 ## Mission
